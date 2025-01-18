@@ -6,6 +6,8 @@ from telethon import TelegramClient, events
 from telethon.tl.types import MessageMediaPhoto
 from dotenv import load_dotenv
 from supabase import create_client, Client
+from transformers import BlipProcessor, BlipForConditionalGeneration
+from PIL import Image
 
 
 load_dotenv()
@@ -23,6 +25,10 @@ client = TelegramClient('session_name', api_id, api_hash)
 # Directory to save images
 IMAGE_SAVE_PATH = 'images/'
 os.makedirs(IMAGE_SAVE_PATH, exist_ok=True)
+
+# Initialise the BLIP image captioning model
+processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
 
 # Load venues.json
 with open('venues.json', 'r') as venue_file:
@@ -139,6 +145,18 @@ async def upload_to_supabase(file_path, file_name):
         print(f"Error uploading to Supabase: {e}")
         return None
 
+async def generate_image_description(image_path):
+    """Generate a description for the given image."""
+    try:
+        image = Image.open(image_path).convert('RGB')
+        inputs = processor(images=image, return_tensors="pt")
+        outputs = model.generate(**inputs)
+        description = processor.decode(outputs[0], skip_special_tokens=True)
+        return description
+    except Exception as e:
+        print(f"Error generating image description: {e}")
+        return None
+
 
 # Event listener for new messages
 @client.on(events.NewMessage(chats='testingbuffet'))
@@ -154,13 +172,18 @@ async def handler(event):
     venue = find_best_match(raw_message)
 
     file_url = None
+    image_description = None
 
-    image_file_path = None  # Path to save the image if available
     if event.message.media and isinstance(event.message.media, MessageMediaPhoto):
         image_file_path = f"{event.message.id}.jpg"
         await client.download_media(event.message.media, file=image_file_path)
         print(f"Image downloaded: {image_file_path}")
         file_url = await upload_to_supabase(image_file_path, f"{event.message.id}.jpg")
+
+        image_description = await generate_image_description(image_file_path)
+
+        print("Image", image_description)
+
         os.remove(image_file_path)  # Clean up after upload
 
     if venue:
