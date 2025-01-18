@@ -38,6 +38,34 @@ with open('venues.json', 'r') as venue_file:
 venue_mapping = {}
 venue_patterns = []
 
+# Supabase realtime event handler
+def handle_realtime_update(payload):
+    print("Realtime update received:", payload)
+
+    # Extract new message details
+    new_message = payload['new']
+    if not new_message or new_message.get("is_sent_from_telegram", True):
+        return  # Ignore already processed messages
+
+    raw_message = new_message['raw_message']
+    venue = find_best_match(raw_message)
+    file_url = new_message.get("image_url")
+    image_description = new_message.get("image_description")
+
+    if venue:
+        # Update message with venue details
+        updated_data = {
+            "roomCode": venue['roomCode'],
+            "longitude": venue['coordinate']['longitude'],
+            "latitude": venue['coordinate']['latitude'],
+            "is_sent_from_telegram": True
+        }
+
+        supabase.table('messages').update(updated_data).eq("id", new_message['id']).execute()
+        print(f"Processed realtime message ID {new_message['id']} and updated with venue info.")
+    else:
+        print(f"No venue matched for realtime message ID {new_message['id']}.")
+
 def is_food_cleared(message):
     clearance_patterns = [
         r'\b(food|snacks|refreshments) (is|are) (cleared|gone|finished|unavailable|out)\b',
@@ -194,7 +222,8 @@ async def handler(event):
             "longitude": venue['coordinate']['longitude'],
             "latitude": venue['coordinate']['latitude'],
             "image_url": file_url,
-            "image_description": image_description
+            "image_description": image_description,
+            "is_sent_from_telegram": True
         }
 
         # Insert data into Supabase

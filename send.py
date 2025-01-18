@@ -1,4 +1,13 @@
 from telethon import TelegramClient
+from supabase import create_client, Client
+import asyncio
+import os
+import time
+from datetime import datetime, timedelta
+from asyncio import Lock
+from pytz import timezone
+
+db_lock = Lock()
 
 # Replace these with your own values from https://my.telegram.org
 api_id = '26531646'
@@ -7,13 +16,16 @@ api_hash = 'bdd2d8da1fda08be9a06d17cc9acee54'
 # Replace 'testingbuffet' with your target group/channel username or ID
 target_chat = 'testingbuffet'
 
+SUPABASE_URL = os.getenv('SUPABASE_URL')
+SUPABASE_KEY = os.getenv('SUPABASE_KEY')
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
 # Define the message components
 image_url = "https://example.com/image.jpg"  # Replace with actual image URL or path
 location = "U-TOWN"  # Replace with extracted location
 food_item = "Pizza, Pasta"  # Replace with extracted food items
 clear_by = "5 PM today"  # Replace with clear-by time
 organiser_status = "I am the organiser"  # or "I am not the organiser but organiser approved"
-
 
 # Construct the formatted message
 formatted_message = f"""
@@ -28,11 +40,68 @@ formatted_message = f"""
 # Initialize the Telegram client
 client = TelegramClient('session_name', api_id, api_hash)
 
-async def send_message():
-    await client.start()  # Ensure the client is started
-    await client.send_message(target_chat, formatted_message, link_preview=False)  # Send the message with formatting
-    print(f"Message sent to {target_chat}: {formatted_message}")
+async def send_message(message):
+    async with db_lock:  # Ensure only one coroutine accesses the database at a time
+        await client.start()
+        await client.send_message(target_chat, message, link_preview=False)
 
-# Running the send_message function
-with client:
-    client.loop.run_until_complete(send_message())
+def get_latest_messages(last_poll_time):
+    """Poll the database for new messages sent after the last poll time."""
+    response = supabase.table("messages") \
+        .select("*") \
+        .gt("created_at", last_poll_time.isoformat()) \
+        .eq("is_cleared", False) \
+        .eq("is_sent_from_telegram", False) \
+        .execute()
+    return response.data
+
+
+async def poll_database():
+    last_poll_time = datetime.utcnow()  # Initialise the last poll time to the current time
+    polling_interval = 5  # Polling interval in seconds
+    sgt_tz = timezone('Asia/Singapore')  # Define Singapore Timezone
+
+    while True:
+        current_poll_time = datetime.utcnow()  # Current time at the start of this poll
+        new_messages = get_latest_messages(last_poll_time)
+
+        for message in new_messages:
+            # Extract and format fields
+            raw_message = message.get('raw_message', 'N/A')
+            room_code = message.get('roomCode', 'N/A')
+
+            # Convert UTC to SGT for created_at
+            created_at_utc = datetime.fromisoformat(message.get('created_at', ''))
+            created_at_sgt = created_at_utc.astimezone(sgt_tz).strftime('%Y-%m-%d %H:%M:%S %Z')
+
+            # Handle optional clear_by field
+            clear_by_utc = message.get('clear_by')
+            if clear_by_utc:
+                clear_by_sgt = datetime.fromisoformat(clear_by_utc).astimezone(sgt_tz).strftime('%Y-%m-%d %H:%M:%S %Z')
+            else:
+                clear_by_sgt = "Not specified"
+
+            # Construct the improved formatted message
+            formatted_message = f"""
+📥 **New Message Detected**
+📄 **Raw Message:** {raw_message}
+🏢 **Room Code:** {room_code}
+⏰ **Created At:** {created_at_sgt}
+🕒 **Clear By:** {clear_by_sgt}
+"""
+
+            print("New message detected:", message)
+            await send_message(formatted_message)  # Send the formatted message
+
+        last_poll_time = current_poll_time  # Update the last poll time to the current poll time
+        await asyncio.sleep(polling_interval)  # Wait for the next polling cycle
+async def main():
+    print("Starting polling for new messages...")
+    try:
+        await poll_database()
+    except KeyboardInterrupt:
+        print("Stopped polling.")
+
+# Run the main loop
+if __name__ == "__main__":
+    asyncio.run(main())
