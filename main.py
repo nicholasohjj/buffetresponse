@@ -1,17 +1,28 @@
 import json
 import re
 import csv
-from telethon import TelegramClient, events
-from dotenv import load_dotenv
 import os
+from telethon import TelegramClient, events
+from telethon.tl.types import MessageMediaPhoto
+from dotenv import load_dotenv
+from supabase import create_client, Client
+
 
 load_dotenv()
 
-# Replace these with your own values from https://my.telegram.org
+# Supabase configuration
+SUPABASE_URL = os.getenv('SUPABASE_URL')
+SUPABASE_KEY = os.getenv('SUPABASE_KEY')
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# Telegram configuration
 api_id = os.getenv('API_ID')
 api_hash = os.getenv('API_HASH')
-
 client = TelegramClient('session_name', api_id, api_hash)
+
+# Directory to save images
+IMAGE_SAVE_PATH = 'images/'
+os.makedirs(IMAGE_SAVE_PATH, exist_ok=True)
 
 # Load venues.json
 with open('venues.json', 'r') as venue_file:
@@ -45,18 +56,6 @@ for venue in venues:
         re.sub(r'[^a-z0-9]', '', room_code)  # Remove non-alphanumeric characters
     ]
     venue_patterns.append((set(patterns), venue))
-
-# CSV setup
-csv_file = 'filtered_messages.csv'
-fieldnames = ["raw_message", "roomCode", "longitude", "latitude"]
-
-# Ensure the CSV has a header
-with open(csv_file, 'w', newline='', encoding="utf-8") as csvfile:
-    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-    writer.writeheader()
-
-# Set to track processed messages
-processed_messages = set()
 
 # Helper function to normalise and match messages dynamically
 def find_best_match(message):
@@ -127,16 +126,24 @@ def find_best_match(message):
     print(f"No match found for '{original_message}'")
     return None
 
+async def upload_to_supabase(file_path, file_name):
+    """Upload a file to Supabase storage."""
+    try:
+        with open(file_path, 'rb') as file:
+            supabase.storage.from_('images').upload(f"images/{file_name}", file)
+            response = supabase.storage.from_("images").get_public_url(f"images/{file_name}")
+            return response
+
+
+    except Exception as e:
+        print(f"Error uploading to Supabase: {e}")
+        return None
 
 
 # Event listener for new messages
 @client.on(events.NewMessage(chats='testingbuffet'))
 async def handler(event):
     raw_message = event.message.message.strip()  # Get the text of the incoming message
-
-    # Avoid processing the same message multiple times
-    if raw_message in processed_messages:
-        return
     
         # Check if the message indicates food has been cleared
     if is_food_cleared(raw_message):
@@ -145,20 +152,32 @@ async def handler(event):
 
     # Find the best match for the venue
     venue = find_best_match(raw_message)
+
+    file_url = None
+
+    image_file_path = None  # Path to save the image if available
+    if event.message.media and isinstance(event.message.media, MessageMediaPhoto):
+        image_file_path = f"{event.message.id}.jpg"
+        await client.download_media(event.message.media, file=image_file_path)
+        print(f"Image downloaded: {image_file_path}")
+        file_url = await upload_to_supabase(image_file_path, f"{event.message.id}.jpg")
+        os.remove(image_file_path)  # Clean up after upload
+
     if venue:
-        filtered_message = {
+        data = {
             "raw_message": raw_message,
             "roomCode": venue['roomCode'],
             "longitude": venue['coordinate']['longitude'],
-            "latitude": venue['coordinate']['latitude']
+            "latitude": venue['coordinate']['latitude'],
+            "image_url": file_url
         }
 
-        # Append to CSV
-        with open(csv_file, 'a', newline='', encoding="utf-8") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writerow(filtered_message)
+        # Insert data into Supabase
+        try:
+            response = supabase.table('messages').insert(data).execute()
+        except:
+            print(f"Failed to insert data: {response.error}")
 
-        print(f"Filtered message: {filtered_message}")
 
 
 print("Listening for messages...")
