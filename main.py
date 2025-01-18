@@ -145,16 +145,16 @@ async def upload_to_supabase(file_path, file_name):
         print(f"Error uploading to Supabase: {e}")
         return None
 
-async def generate_image_description(image_path):
-    """Generate a description for the given image."""
+async def describe_food_in_image(image_path):
+    """Generate a description focusing on food in the image."""
     try:
-        image = Image.open(image_path).convert('RGB')
+        image = Image.open(image_path).convert("RGB")
         inputs = processor(images=image, return_tensors="pt")
         outputs = model.generate(**inputs)
         description = processor.decode(outputs[0], skip_special_tokens=True)
         return description
     except Exception as e:
-        print(f"Error generating image description: {e}")
+        print(f"Error describing food: {e}")
         return None
 
 
@@ -180,7 +180,7 @@ async def handler(event):
         print(f"Image downloaded: {image_file_path}")
         file_url = await upload_to_supabase(image_file_path, f"{event.message.id}.jpg")
 
-        image_description = await generate_image_description(image_file_path)
+        image_description = await describe_food_in_image(image_file_path)
 
         print("Image", image_description)
 
@@ -192,7 +192,8 @@ async def handler(event):
             "roomCode": venue['roomCode'],
             "longitude": venue['coordinate']['longitude'],
             "latitude": venue['coordinate']['latitude'],
-            "image_url": file_url
+            "image_url": file_url,
+            "image_description": image_description
         }
 
         # Insert data into Supabase

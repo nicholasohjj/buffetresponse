@@ -857,6 +857,7 @@
     },
     {
         "roomCode": "Town Plaza",
+        "aliases": ["global learning room"],
         "coordinate": {
             "longitude": 103.773553,
             "latitude": 1.303857
