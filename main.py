@@ -174,7 +174,7 @@ async def handler(event):
     file_url = None
     image_description = None
 
-    if event.message.media and isinstance(event.message.media, MessageMediaPhoto):
+    if event.message.media and isinstance(event.message.media, MessageMediaPhoto) and venue:
         image_file_path = f"{event.message.id}.jpg"
         await client.download_media(event.message.media, file=image_file_path)
         print(f"Image downloaded: {image_file_path}")
