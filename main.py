@@ -180,6 +180,7 @@ async def handler(event):
         print(f"Image downloaded: {image_file_path}")
         file_url = await upload_to_supabase(image_file_path, f"{event.message.id}.jpg")
 
+        print("Uploaded")
         image_description = await describe_food_in_image(image_file_path)
 
         print("Image", image_description)
