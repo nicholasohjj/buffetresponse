@@ -10,8 +10,8 @@ from pytz import timezone
 db_lock = Lock()
 
 # Replace these with your own values from https://my.telegram.org
-api_id = '26531646'
-api_hash = 'bdd2d8da1fda08be9a06d17cc9acee54'
+api_id = os.getenv('API_ID')
+api_hash = os.getenv('API_HASH')
 
 # Replace 'testingbuffet' with your target group/channel username or ID
 target_chat = 'testingbuffet'
@@ -38,12 +38,17 @@ formatted_message = f"""
 """
 
 # Initialize the Telegram client
-client = TelegramClient('session_name', api_id, api_hash)
+client = TelegramClient('send_session', api_id, api_hash)
 
-async def send_message(message):
+async def send_message(image_url, message):
     async with db_lock:  # Ensure only one coroutine accesses the database at a time
         await client.start()
-        await client.send_message(target_chat, message, link_preview=False)
+        if image_url:
+            # Send the image with the caption
+            await client.send_file(target_chat, image_url, caption=message, link_preview=False)
+        else:
+            # Send only the message
+            await client.send_message(target_chat, message, link_preview=False)
 
 def get_latest_messages(last_poll_time):
     """Poll the database for new messages sent after the last poll time."""
@@ -81,17 +86,18 @@ async def poll_database():
             else:
                 clear_by_sgt = "Not specified"
 
+            image_url = message.get('image_url')
+
             # Construct the improved formatted message
             formatted_message = f"""
-📥 **New Message Detected**
-📄 **Raw Message:** {raw_message}
-🏢 **Room Code:** {room_code}
+📄 **Description:** {raw_message}
+🏢 **Location:** {room_code}
 ⏰ **Created At:** {created_at_sgt}
 🕒 **Clear By:** {clear_by_sgt}
 """
 
             print("New message detected:", message)
-            await send_message(formatted_message)  # Send the formatted message
+            await send_message(image_url, formatted_message)  # Send the message with or without an image
 
         last_poll_time = current_poll_time  # Update the last poll time to the current poll time
         await asyncio.sleep(polling_interval)  # Wait for the next polling cycle

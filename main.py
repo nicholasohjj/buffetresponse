@@ -66,6 +66,7 @@ def handle_realtime_update(payload):
     else:
         print(f"No venue matched for realtime message ID {new_message['id']}.")
 
+
 def is_food_cleared(message):
     clearance_patterns = [
         r'\b(food|snacks|refreshments) (is|are) (cleared|gone|finished|unavailable|out)\b',
@@ -229,8 +230,8 @@ async def handler(event):
         # Insert data into Supabase
         try:
             response = supabase.table('messages').insert(data).execute()
-        except:
-            print(f"Failed to insert data: {response.error}")
+        except Exception as e:
+            print(f"Failed to insert data: {e}")
 
 
 
