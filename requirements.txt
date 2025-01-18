@@ -6,7 +6,6 @@ anyio==4.8.0
 attrs==24.3.0
 certifi==2024.12.14
 charset-normalizer==3.4.1
-clip==1.0
 colorama==0.4.6
 deprecation==2.1.0
 filelock==3.16.1
