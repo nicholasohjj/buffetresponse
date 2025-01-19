@@ -38,6 +38,30 @@ with open('venues.json', 'r') as venue_file:
 venue_mapping = {}
 venue_patterns = []
 
+def parse_dietary_restrictions(message):
+    """Parses dietary restrictions from the message text.
+
+    Args:
+        message: The message text to parse.
+
+    Returns:
+        A comma-separated string of dietary restrictions found in the message,
+        or an empty string if none are found.
+    """
+
+    dietary_restrictions = []
+    patterns = [
+        r'\b(halal)\b',
+        r'\b(beef|pork)\b',
+        r'\b(vegetarian)\b',
+    ]
+    for pattern in patterns:
+        if re.search(pattern, message, re.IGNORECASE):
+            dietary_restrictions.append(re.search(pattern, message, re.IGNORECASE).group(1))
+
+    return ','.join(dietary_restrictions)
+
+
 # Supabase realtime event handler
 def handle_realtime_update(payload):
     print("Realtime update received:", payload)
@@ -54,11 +78,14 @@ def handle_realtime_update(payload):
 
     if venue:
         # Update message with venue details
+        dietary_restrictions = parse_dietary_restrictions(raw_message)
         updated_data = {
             "roomCode": venue['roomCode'],
             "longitude": venue['coordinate']['longitude'],
             "latitude": venue['coordinate']['latitude'],
-            "is_sent_from_telegram": True
+            "is_sent_from_telegram": True,
+            "dietary_restrictions": dietary_restrictions,
+
         }
 
         supabase.table('messages').update(updated_data).eq("id", new_message['id']).execute()
