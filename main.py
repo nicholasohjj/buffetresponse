@@ -190,6 +190,10 @@ async def describe_food_in_image(image_path):
 # Event listener for new messages
 @client.on(events.NewMessage(chats='testingbuffet'))
 async def handler(event):
+    if event.sender.username == 'usernamename123':
+        print(f"Skipping message from ignored user: {event.sender.username}")
+        return  # Ignore the message
+    
     raw_message = event.message.message.strip()  # Get the text of the incoming message
     
         # Check if the message indicates food has been cleared
